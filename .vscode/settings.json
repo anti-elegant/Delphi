@@ -1,0 +1,12 @@
+{
+  "editor.formatOnSave": true,
+  "[json]": {
+    "editor.formatOnSave": true
+  },
+  "[jsonc]": {
+    "editor.formatOnSave": true
+  },
+  "[xml]": {
+    "editor.formatOnSave": true
+  }
+}
