@@ -90,3 +90,8 @@ fastlane/test_output
 iOSInjectionProject/
 
 .DS_Store
+
+.roo/
+.claude/
+
+CLAUDE.md

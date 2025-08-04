@@ -1,4 +1,3 @@
-import CloudKit
 import SwiftData
 import SwiftUI
 import UserNotifications
@@ -6,6 +5,19 @@ import UserNotifications
 @main
 struct DelphiApp: App {
   @StateObject private var notificationService = NotificationService.shared
+  
+  // MARK: - Clean Architecture Dependencies
+  @StateObject private var appCoordinator: AppCoordinator
+  
+  init() {
+    // Configure DI Container with ModelContext
+    let container = DIContainer.shared
+    let modelContext = ModelContext(DelphiApp.sharedModelContainer)
+    container.setModelContext(modelContext)
+    
+    // Initialize AppCoordinator
+    self._appCoordinator = StateObject(wrappedValue: AppCoordinator(container: container))
+  }
 
   // MARK: - Development Flags
   #if DEBUG
@@ -23,29 +35,12 @@ struct DelphiApp: App {
 
   static let sharedModelContainer: ModelContainer = {
     let schema = Schema([
-      Prediction.self
+      PredictionDataModel.self
     ])
-
-    // Only enable CloudKit in production with proper entitlements
-    let cloudKitDatabase: ModelConfiguration.CloudKitDatabase
-    #if targetEnvironment(simulator)
-      // Disable CloudKit in simulator to prevent crashes
-      cloudKitDatabase = .none
-    #else
-      // Enable CloudKit on device if entitlements are available
-      if Bundle.main.object(
-        forInfoDictionaryKey: "com.apple.developer.icloud-services"
-      ) != nil {
-        cloudKitDatabase = .automatic
-      } else {
-        cloudKitDatabase = .none
-      }
-    #endif
 
     let modelConfiguration = ModelConfiguration(
       schema: schema,
-      isStoredInMemoryOnly: false,
-      cloudKitDatabase: cloudKitDatabase
+      isStoredInMemoryOnly: false
     )
 
     do {
@@ -81,8 +76,7 @@ struct DelphiApp: App {
           // Create a new configuration that will recreate the store
           let recoveryConfiguration = ModelConfiguration(
             schema: schema,
-            isStoredInMemoryOnly: false,
-            cloudKitDatabase: .none  // Disable CloudKit during recovery
+            isStoredInMemoryOnly: false
           )
 
           let recoveryContainer = try ModelContainer(
@@ -112,47 +106,19 @@ struct DelphiApp: App {
 
   var body: some Scene {
     WindowGroup {
-      LandingView()
+      ContentView()
         .environmentObject(notificationService)
+        .environmentObject(appCoordinator)
+        .environment(\.diContainer, DIContainer.shared)
+        .onAppear {
+          // Suppress Apple Intelligence XPC warnings in simulator
+          #if targetEnvironment(simulator)
+          setenv("OS_ACTIVITY_MODE", "disable", 1)
+          #endif
+        }
     }
     .modelContainer(DelphiApp.sharedModelContainer)
   }
 
 }
 
-// MARK: - CloudKit Push Notification Handling
-class AppDelegate: NSObject, UIApplicationDelegate {
-
-  func application(
-    _ application: UIApplication,
-    didReceiveRemoteNotification userInfo: [AnyHashable: Any],
-    fetchCompletionHandler completionHandler: @escaping (
-      UIBackgroundFetchResult
-    ) -> Void
-  ) {
-
-    // Check if this is a CloudKit notification
-    if userInfo["ck"] as? [String: Any] != nil {
-      Task {
-        await CloudKitSyncService.shared.handleCloudKitNotification(userInfo)
-        completionHandler(.newData)
-      }
-    } else {
-      completionHandler(.noData)
-    }
-  }
-
-  func application(
-    _ application: UIApplication,
-    didFailToRegisterForRemoteNotificationsWithError error: Error
-  ) {
-    print("Failed to register for remote notifications: \(error)")
-  }
-
-  func application(
-    _ application: UIApplication,
-    didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
-  ) {
-    print("Successfully registered for remote notifications")
-  }
-}

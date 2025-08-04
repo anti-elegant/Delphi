@@ -45,11 +45,19 @@ final class NotificationService: NSObject, ObservableObject {
     super.init()
     notificationCenter.delegate = self
     setupNotificationCategories()
-    checkAuthorizationStatus()
+    // Note: checkAuthorizationStatus() is now called only when needed
   }
 
   // MARK: - Permission Management
   func requestNotificationPermission() async throws {
+    // Check current status first
+    await checkAuthorizationStatus()
+
+    // If already authorized, no need to request again
+    if authorizationStatus == .authorized {
+      return
+    }
+
     let options: UNAuthorizationOptions = [.alert, .badge, .sound]
 
     do {
@@ -68,12 +76,10 @@ final class NotificationService: NSObject, ObservableObject {
     }
   }
 
-  func checkAuthorizationStatus() {
-    Task {
-      let settings = await notificationCenter.notificationSettings()
-      await MainActor.run {
-        authorizationStatus = settings.authorizationStatus
-      }
+  func checkAuthorizationStatus() async {
+    let settings = await notificationCenter.notificationSettings()
+    await MainActor.run {
+      authorizationStatus = settings.authorizationStatus
     }
   }
 
@@ -109,6 +115,9 @@ final class NotificationService: NSObject, ObservableObject {
 
   // MARK: - Scheduling Notifications
   func scheduleReminderForPrediction(_ prediction: Prediction) async throws {
+    // Check authorization status first
+    await checkAuthorizationStatus()
+
     guard authorizationStatus == .authorized else {
       throw NotificationServiceError.permissionDenied
     }
@@ -144,7 +153,7 @@ final class NotificationService: NSObject, ObservableObject {
   {
     let content = UNMutableNotificationContent()
     content.title = "Prediction Due Today"
-    content.body = "Time to resolve: \(prediction.eventName)"
+    content.body = "Time to resolve: \(prediction.title)"
     content.sound = .default
     content.categoryIdentifier = NotificationIdentifiers.categoryIdentifier
     content.userInfo = [
@@ -175,7 +184,7 @@ final class NotificationService: NSObject, ObservableObject {
   {
     let content = UNMutableNotificationContent()
     content.title = "Prediction Due Tomorrow"
-    content.body = "Don't forget: \(prediction.eventName)"
+    content.body = "Don't forget: \(prediction.title)"
     content.sound = .default
     content.categoryIdentifier = NotificationIdentifiers.categoryIdentifier
     content.userInfo = [
